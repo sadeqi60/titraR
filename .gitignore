@@ -1,0 +1,11 @@
+# Never commit clinical / patient data or build outputs
+*.json
+clinical_sample/
+reports/
+.Rproj.user/
+.Rhistory
+.RData
+*.tar.gz
+*.Rcheck/
+*.pdf
+*.docx

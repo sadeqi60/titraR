@@ -1,0 +1,31 @@
+Package: titraR
+Type: Package
+Title: Titra — Interactive DBS Programming & Electrophysiology DAG Studio (htmlwidget & Shiny)
+Version: 1.0.0
+Authors@R: person("Titra", "Team", role = c("aut", "cre"), email = "titra@example.org")
+Description: R htmlwidget and interactive Shiny studio port of the Titra AnyWidget for
+    deep brain stimulation (DBS) programming and electrophysiology. Detects, verifies,
+    normalizes, and merges Medtronic Percept JSON session reports and amplitude-titration
+    exports entirely in native R; computes Welch PSD, STFT spectrograms, beta and dynamic
+    f_stim/2 finely-tuned gamma (FTG) dynamics, game-theoretic equilibria, extreme-value
+    tail risk (CVaR/EVT-VaR/POT/GEV), log-OU option-pricing adaptivity lattices, and
+    graph signal processing (GSP) amplitude-state biomarkers. Renders the full reactive
+    Titra DAG canvas (Welcome screen, 4-stage progress bar, 17 curated presets, custom
+    pipeline builder, compact FTG controller, multi-format reports, and instant Clear)
+    inside RStudio Viewer, Quarto/R Markdown, or a full-screen Shiny web application.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: false
+Depends:
+    R (>= 4.1.0)
+Imports:
+    base64enc,
+    grDevices,
+    htmltools,
+    htmlwidgets,
+    jsonlite,
+    shiny,
+    stats,
+    utils
+Suggests:
+    rmarkdown

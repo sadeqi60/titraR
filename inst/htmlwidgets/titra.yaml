@@ -1,0 +1,6 @@
+dependencies:
+  - name: titra-assets
+    version: 1.0.0
+    src: htmlwidgets/lib/titra
+    stylesheet: nr_dag.css
+    all_files: true

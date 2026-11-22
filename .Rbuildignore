@@ -1,0 +1,5 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^reports$
+^clinical_sample$
+^\.git$
