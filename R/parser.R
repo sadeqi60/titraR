@@ -44,58 +44,86 @@ t_extract_groups <- function(raw) {
       active <- isTRUE(g$ActiveGroup)
       ps <- g$ProgramSettings %||% list()
       hemis <- list()
-      rates <- numeric(0)
+      rate <- t_num(ps$RateInHertz %||% 0)
+      rates <- if (rate > 0) rate else numeric(0)
 
-      parse_hemi_prog <- function(p, hemi_label) {
-        if (!is.list(p) || !length(p)) return(NULL)
-        rate <- t_num(p$RateInHertz %||% 0)
-        if (rate > 0) rates <<- c(rates, rate)
-        progs <- p$Programs %||% list()
-        if (is.data.frame(progs)) progs <- lapply(seq_len(nrow(progs)), function(i) as.list(progs[i, , drop = FALSE]))
-        pw <- 60.0; amp <- 0.0; elecs <- list()
-        if (length(progs) >= 1L && is.list(progs[[1]])) {
-          p1 <- progs[[1]]
-          pw <- t_num(p1$PulseWidthInMicroSecond %||% 60.0)
-          amp <- t_num(p1$AmplitudeInMilliAmps %||% 0.0)
-          es <- p1$ElectrodeState %||% list()
-          if (is.data.frame(es)) es <- lapply(seq_len(nrow(es)), function(i) as.list(es[i, , drop = FALSE]))
-          for (e in es) {
-            if (!is.list(e)) next
-            el_name <- t_normalize_electrode(e$Electrode %||% "")
-            pol <- t_strip_enum(e$ElectrodeStateResult %||% e$Polarity %||% "")
-            if (nzchar(el_name)) elecs[[length(elecs) + 1L]] <- list(electrode = el_name, polarity = pol)
+      # 1) BrainSense SensingChannel array (Percept RC / PC BrainSense groups)
+      sc_list <- ps$SensingChannel %||% list()
+      if (is.data.frame(sc_list)) sc_list <- lapply(seq_len(nrow(sc_list)), function(i) as.list(sc_list[i, , drop = FALSE]))
+      for (sc in sc_list) {
+        if (!is.list(sc)) next
+        h <- t_strip_enum(sc$HemisphereLocation %||% "")
+        if (!nzchar(h)) next
+        r_hz <- t_num(sc$RateInHertz %||% rate)
+        if (r_hz > 0) rates <- c(rates, r_hz)
+        ss <- sc$SensingSetup %||% list()
+        ch_raw <- t_str((ss$ChannelSignalResult %||% list())$Channel %||% sc$Channel %||% "")
+        pkey <- if (nzchar(ch_raw)) t_parse_pair_string(ch_raw)$pair else ""
+        es <- sc$ElectrodeState %||% list()
+        if (is.data.frame(es)) es <- lapply(seq_len(nrow(es)), function(i) as.list(es[i, , drop = FALSE]))
+        elecs <- list()
+        total_ma <- 0.0
+        for (e in es) {
+          if (!is.list(e)) next
+          cn <- t_normalize_electrode(e$Electrode %||% "")
+          pol <- t_strip_enum(e$ElectrodeStateResult %||% e$Polarity %||% "")
+          ma <- t_num(e$ElectrodeAmplitudeInMilliAmps %||% 0.0)
+          if (identical(pol, "Negative")) total_ma <- total_ma + ma
+          if (nzchar(cn)) {
+            elecs[[length(elecs) + 1L]] <- list(contact = cn, polarity = pol, ma = round(ma, 2), fraction64 = e$ElectrodeFractionOf64)
           }
         }
-        sc <- p$SensingChannel %||% list()
-        if (is.data.frame(sc)) sc <- lapply(seq_len(nrow(sc)), function(i) as.list(sc[i, , drop = FALSE]))
-        sense_pair <- ""; tracked_f <- 0.0; lower_ma <- 0.0; upper_ma <- 0.0
-        if (length(sc) >= 1L && is.list(sc[[1]])) {
-          s1 <- sc[[1]]
-          pp <- t_parse_pair_string(s1$Channel %||% "")
-          sense_pair <- pp$pair
-          tracked_f <- t_num(s1$SensingSetup$FrequencyInHertz %||% 0.0)
-          lower_ma <- t_num(s1$LowerLimitInMilliAmps %||% 0.0)
-          upper_ma <- t_num(s1$UpperLimitInMilliAmps %||% 0.0)
-        }
-        list(
-          hemisphere = hemi_label,
-          rate_hz = round(rate, 1),
-          ftg_center_hz = round(if (rate > 0) rate / 2.0 else 72.5, 1),
-          pw_us = round(pw, 1),
-          lower_ma = round(lower_ma, 2),
-          upper_ma = round(upper_ma, 2),
-          total_ma = round(amp, 2),
-          sensing_pair = sense_pair,
-          tracked_freq_hz = round(tracked_f, 2),
+        hemis[[h]] <- list(
+          hemisphere = h,
+          rate_hz = round(r_hz, 1),
+          ftg_center_hz = if (r_hz > 0) round(r_hz / 2.0, 2) else 0.0,
+          pw_us = t_num(sc$PulseWidthInMicroSecond %||% 0.0),
+          lower_ma = t_num(sc$LowerLimitInMilliAmps %||% 0.0),
+          upper_ma = t_num(sc$UpperLimitInMilliAmps %||% 0.0),
+          total_ma = round(total_ma, 2),
+          sensing_pair = pkey,
+          tracked_freq_hz = round(t_num(ss$FrequencyInHertz %||% 0.0), 2),
           electrodes = t_list(elecs)
         )
       }
 
-      if (!is.null(ps$SensingChannel) || !is.null(ps$LeftHemisphere) || !is.null(ps$RightHemisphere)) {
-        lh <- parse_hemi_prog(ps$LeftHemisphere, "Left")
-        rh <- parse_hemi_prog(ps$RightHemisphere, "Right")
-        if (!is.null(lh)) hemis[["Left"]] <- lh
-        if (!is.null(rh)) hemis[["Right"]] <- rh
+      # 2) Fallback LeftHemisphere / RightHemisphere Programs blocks
+      for (pair_side in list(c("LeftHemisphere", "Left"), c("RightHemisphere", "Right"))) {
+        side_key <- pair_side[1]
+        h <- pair_side[2]
+        if (!is.null(ps[[side_key]]) && is.null(hemis[[h]])) {
+          p_blk <- ps[[side_key]]
+          progs <- p_blk$Programs %||% list()
+          if (is.data.frame(progs)) progs <- lapply(seq_len(nrow(progs)), function(i) as.list(progs[i, , drop = FALSE]))
+          if (length(progs) >= 1L && is.list(progs[[1]])) {
+            pr <- progs[[1]]
+            r_hz <- t_num(pr$RateInHertz %||% p_blk$RateInHertz %||% rate)
+            if (r_hz > 0) rates <- c(rates, r_hz)
+            es <- pr$ElectrodeState %||% list()
+            if (is.data.frame(es)) es <- lapply(seq_len(nrow(es)), function(i) as.list(es[i, , drop = FALSE]))
+            elecs <- list()
+            for (e in es) {
+              if (!is.list(e)) next
+              cn <- t_normalize_electrode(e$Electrode %||% "")
+              pol <- t_strip_enum(e$ElectrodeStateResult %||% e$Polarity %||% "")
+              ma <- t_num(e$ElectrodeAmplitudeInMilliAmps %||% 0.0)
+              if (nzchar(cn)) elecs[[length(elecs) + 1L]] <- list(contact = cn, polarity = pol, ma = round(ma, 2), fraction64 = e$ElectrodeFractionOf64)
+            }
+            amp <- t_num(pr$AmplitudeInMilliAmps %||% 0.0)
+            hemis[[h]] <- list(
+              hemisphere = h,
+              rate_hz = round(r_hz, 1),
+              ftg_center_hz = if (r_hz > 0) round(r_hz / 2.0, 2) else 0.0,
+              pw_us = t_num(pr$PulseWidthInMicroSecond %||% 0.0),
+              lower_ma = 0.0,
+              upper_ma = round(amp, 2),
+              total_ma = round(amp, 2),
+              sensing_pair = "",
+              tracked_freq_hz = 0.0,
+              electrodes = t_list(elecs)
+            )
+          }
+        }
       }
       rate_hz <- if (length(rates)) rates[1] else 145.0
       out[[length(out) + 1L]] <- list(

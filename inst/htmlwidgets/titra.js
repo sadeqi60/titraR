@@ -26,12 +26,12 @@
     });
   }
 
-  function sendChunkedInputRequest(elId, req) {
+  function sendChunkedRequest(directKey, chunkKey, req) {
     if (typeof window.Shiny === "undefined") return;
     var raw = JSON.stringify(req || {});
-    var CHUNK = 1200000; // ~1.2 MB safe for all Shiny/proxy WebSockets
+    var CHUNK = 900000; // ~900 KB safe for all Shiny/proxy WebSockets
     if (raw.length <= CHUNK) {
-      window.Shiny.setInputValue(elId + "_input_request", req, { priority: "event" });
+      window.Shiny.setInputValue(directKey, req, { priority: "event" });
       return;
     }
     var txId = "tx_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
@@ -40,7 +40,7 @@
     function sendNext() {
       var slice = raw.slice(idx * CHUNK, (idx + 1) * CHUNK);
       window.Shiny.setInputValue(
-        elId + "_input_chunk",
+        chunkKey,
         { tx: txId, index: idx, total: total, data: slice },
         { priority: "event" }
       );
@@ -68,7 +68,7 @@
         report_result: {},
         input_request: {},
         input_state: { data_dir: "", files: [], loaded: "", report: null, modality: "lfp" },
-        capabilities: { wasm: false, typst: false, docx: true },
+        capabilities: { wasm: true, typst: false, docx: true },
       };
 
       function emit(ev) {
@@ -91,9 +91,9 @@
           for (var i = 0; i < keys.length; i++) {
             var k = keys[i];
             if (k === "input_request") {
-              sendChunkedInputRequest(el.id, store.input_request);
+              sendChunkedRequest(el.id + "_input_request", el.id + "_input_chunk", store.input_request);
             } else if (k === "report_request") {
-              window.Shiny.setInputValue(el.id + "_report_request", store.report_request, { priority: "event" });
+              sendChunkedRequest(el.id + "_report_request", el.id + "_report_chunk", store.report_request);
             } else if (k === "selection" || k === "dag_state" || k === "preset") {
               window.Shiny.setInputValue(el.id + "_" + k, store[k]);
             } else if (k === "svg_output") {

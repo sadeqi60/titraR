@@ -47,6 +47,7 @@ titra <- function(source = NULL,
     }
   }
 
+  has_typst_cli <- nzchar(Sys.which("typst"))
   x <- list(
     payload = payload,
     selection = selection,
@@ -54,7 +55,7 @@ titra <- function(source = NULL,
     svg_output = "",
     preset = preset,
     input_state = input_state,
-    capabilities = list(wasm = FALSE, typst = nzchar(Sys.which("typst")), docx = TRUE)
+    capabilities = list(wasm = !has_typst_cli, typst = has_typst_cli, docx = TRUE)
   )
 
   htmlwidgets::createWidget(
@@ -303,15 +304,34 @@ titra_server <- function(id, input, output, session, data_dir = NULL, source = N
     }
   }, ignoreNULL = TRUE)
 
-  # Report / export requests
-  shiny::observeEvent(input[[paste0(id, "_report_request")]], {
-    req <- input[[paste0(id, "_report_request")]]
+  # Report / export requests (direct + chunked for multi-MB PDF/PNG/SVG bundles)
+  process_report_request <- function(req) {
     if (is.null(req) || is.null(req$id)) return()
     res <- tryCatch(
       t_handle_report_request(shiny::isolate(rv$payload), req),
       error = function(e) list(id = req$id, ok = FALSE, error = conditionMessage(e), elapsed_s = 0)
     )
     push_patch(list(report_result = res))
+  }
+
+  shiny::observeEvent(input[[paste0(id, "_report_request")]], {
+    process_report_request(input[[paste0(id, "_report_request")]])
+  }, ignoreNULL = TRUE)
+
+  shiny::observeEvent(input[[paste0(id, "_report_chunk")]], {
+    ch <- input[[paste0(id, "_report_chunk")]]
+    if (is.null(ch) || is.null(ch$tx)) return()
+    tx <- t_str(ch$tx)
+    idx <- as.integer(ch$index) + 1L
+    tot <- as.integer(ch$total)
+    if (is.null(state_env$chunks[[tx]])) state_env$chunks[[tx]] <- character(tot)
+    state_env$chunks[[tx]][idx] <- t_str(ch$data)
+    if (all(nzchar(state_env$chunks[[tx]]))) {
+      full_json <- paste(state_env$chunks[[tx]], collapse = "")
+      state_env$chunks[[tx]] <- NULL
+      req <- jsonlite::fromJSON(full_json, simplifyVector = FALSE)
+      process_report_request(req)
+    }
   }, ignoreNULL = TRUE)
 
   # Live two-way sync back into R reactiveValues

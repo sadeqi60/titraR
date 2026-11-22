@@ -33,12 +33,16 @@ if (file.exists(b1)) {
               length(sess2$payload$recordings[[1]]$amp_steps)))
 }
 
-cat("4. Testing Shiny app object & Word (.docx) export...\n")
+cat("4. Testing Shiny app object & Typst/Word/ZIP report engine...\n")
 app <- titra_shiny_app()
 stopifnot(inherits(app, "shiny.appobj"))
 if (exists("sess") && isTRUE(sess$ok)) {
-  rep_res <- titraR:::t_handle_report_request(sess$payload, list(id = "t1", formats = list("docx", "zip")))
-  stopifnot(isTRUE(rep_res$ok), length(rep_res$files) == 2L)
-  cat("   OK: DOCX and ZIP reports generated natively in R.\n")
+  b_res <- titraR:::t_handle_report_request(sess$payload, list(id = "b1", action = "typst_bundle"))
+  stopifnot(isTRUE(b_res$ok), nzchar(b_res$bundle$main), nzchar(b_res$bundle$data$report), nzchar(b_res$bundle$data$infographic))
+  d_res <- titraR:::t_handle_report_request(sess$payload, list(id = "d1", formats = list("docx")))
+  stopifnot(isTRUE(d_res$ok), length(d_res$files) == 1L)
+  z_res <- titraR:::t_handle_report_request(sess$payload, list(id = "z1", formats = list("zip")))
+  stopifnot(isTRUE(z_res$ok), length(z_res$files) == 1L)
+  cat("   OK: Typst bundle, DOCX, and ZIP reports generated natively in R.\n")
 }
 cat("ALL titraR TESTS PASSED!\n")
